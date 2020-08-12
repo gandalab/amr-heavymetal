@@ -1,0 +1,46 @@
+MEGARES PIPELINE
+
+
+#!/bin/bash
+
+#PBS -N master1bl
+#PBS -l nodes=1:ppn=10
+#PBS -l pmem=10gb
+#PBS -A open
+#PBS -o ~/work/amrbrazil/masterlogblast.txt
+
+# shell script of master pipeline for AMR samples
+
+# change wd
+cd ~/work/amrbrazil
+
+# activate conda environment
+conda activate bioinfo
+
+# define list of samples to run
+NAMES=~/work/amrbrazil/names1
+
+# get database path
+DB=~/work/amrbrazil/megares/megares_modified_database_v2.00.fasta
+
+# FIRST STEP: trimmomatic
+# removes all reads under 50 bp
+cat $NAMES | parallel /storage/work/epb5360/miniconda3/envs/bioinfo/bin/trimmomatic PE /gpfs/group/evk5387/default/G527_uncompressed/G527_N088/{}_R1_001.fastq.gz /gpfs/group/evk5387/default/G527_uncompressed/G527_N088/{}_R2_001.fastq.gz -baseout ~/scratch/trimmed/trim_{}.fastq.gz -threads 10 MINLEN:50
+
+# change wd 
+#cd ~/scratch/merge
+
+# SECOND STEP: merge in flash
+# merge paired-end reads w/max overlap of 100 bp
+cat $NAMES | parallel /storage/work/epb5360/miniconda3/envs/bioinfo/bin/flash ~/scratch/trimmed/trim_{}_1P.fastq.gz ~/scratch/trimmed/trim_{}_2P.fastq.gz --output-prefix {} --threads 10 --max-overlap 100
+
+# change wd back
+#cd ~/work/amrbrazil
+
+# THIRD STEP: convert to fasta
+# convert fastq to fasta
+cat $NAMES | parallel /storage/work/epb5360/miniconda3/envs/bioinfo/bin/seqkit fq2fa ~/scratch/merge/{}.extendedFrags.fastq --out-file ~/scratch/fa/{}.fasta --threads 10
+
+# FOURTH STEP: blast against MEGARES db
+# perform local alignment against custom BLAST db
+cat $NAMES | parallel "blastn -db $DB -query ~/scratch/fa/{}.fasta -out ~/scratch/blast/{}.txt -num_threads 10 -outfmt '6 qacc sacc pident slen qcovs qcovhsp qcovus'"
