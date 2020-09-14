@@ -1,0 +1,277 @@
+---
+title: "DESeq"
+author: "Emily Bean"
+date: "9/14/2020"
+output: 
+  rmarkdown::github_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+# set root directory b/c we're in Rmd
+knitr::opts_knit$set(root.dir = '~/git/amr-heavymetal/')
+```
+
+## Differential abundance analysis at the genus level
+
+This script reads in OTU tables generated in MG-RAST for farm A and farm B in fecal, rumen fluid, and DNS samples. Differential abundance analysis is performed at the genus level for differences between farms at each body site.
+
+```{r read data}
+
+## get data
+require(tidyverse)
+require(DESeq2)
+require(phyloseq)
+set.seed(123)
+
+# set alpha
+alpha = 0.05
+
+# there are 3 text files, one for each anatomical site
+# for DEseq format, need genus on rows and samples in columns
+
+dns <- read.table("./data/OTU_genus_DNS_nominitable.txt", header = TRUE, sep = "\t") %>% 
+  # pivot long by genus
+  pivot_longer(cols = 2:last_col(), names_to = "G", values_to = "count") %>%
+  # spread back out by sample name
+  pivot_wider(names_from = genus, values_from = count, values_fill = 0) %>% 
+  # get rid of NA
+  drop_na() %>% 
+  # make genus into rownames for DESeq
+  column_to_rownames(var = "G")
+
+# also needs to be in matrix format
+dns <- as.matrix(dns)
+
+fec <- read.table("./data/OTU_genus_feces.txt", header = TRUE, sep = "\t") %>% 
+  # pivot long by genus
+  pivot_longer(cols = 2:last_col(), names_to = "G", values_to = "count") %>%
+  # spread back out by sample name
+  pivot_wider(names_from = genus, values_from = count, values_fill = 0) %>% 
+  # get rid of NA
+  drop_na() %>% 
+  # make genus into rownames for DESeq
+  column_to_rownames(var = "G")
+
+# also needs to be in matrix format
+fec <- as.matrix(fec)
+
+rum <- read.table("./data/OTU_genus_rumen.txt", header = TRUE, sep = "\t")  %>% 
+# pivot long by genus
+  pivot_longer(cols = 2:last_col(), names_to = "G", values_to = "count") %>%
+  # spread back out by sample name
+  pivot_wider(names_from = genus, values_from = count, values_fill = 0) %>% 
+  # get rid of NA
+  drop_na() %>% 
+  # make genus into rownames for DESeq
+  column_to_rownames(var = "G")
+
+# also needs to be in matrix format
+rum <- as.matrix(rum)
+
+```
+
+
+### DNS
+
+
+DESeq requires a separate matrix with metadata (categorical information) and it needs to be structured properly for the janky software to work properly.
+
+```{r metadata dns}
+
+# get vector of sample names
+samp <- colnames(as.data.frame(dns)) 
+
+# turn this into a 1-column dataframe to add farm info
+df <- as.data.frame(samp)
+
+# add farm info that is stored in sample names
+meta <- df %>% 
+  # get string for farm
+  mutate(farm = str_extract(samp, "P(\\d)")) %>% 
+  # change to farm A and B
+  mutate(farm = factor(case_when(
+    farm %in% "P1" ~ "A",
+    farm %in% "P2" ~ "B"
+  ) )) %>% 
+  # make into rownames
+  column_to_rownames(var = "samp") 
+
+# DESeq requires the reference level to be set 
+meta$farm <- relevel(meta$farm, ref = "B")
+
+# and it needs to be in matrix format
+metam <- as.matrix(meta)
+
+```
+
+The DEseq protocol runs in the chunk below.
+
+```{r deseq dns}
+
+# because DESeq2 is janky,  the names have to be in THE EXACT ORDER
+all(colnames(dns) == meta$sample)
+
+# make DESeq2 object
+dds <- DESeqDataSetFromMatrix(countData = dns,
+                              colData = metam,
+                              design = ~ farm)
+dds 
+
+# perform DeSeq testing
+de <- DESeq(dds, test = "Wald", fitType = "mean")  # fit type should be non-para
+
+# get results
+res = results(de, cooksCutoff = FALSE)
+# get only significant results
+sigtab = res[which(res$padj < alpha), ]
+
+# sort by log2fold change
+sigtab <- sigtab[order(sigtab$log2FoldChange), ]
+
+# make dataframe to save as text table
+tab <- as.data.frame(sigtab) %>% 
+  rownames_to_column(var = "Genus")
+
+# write results to file
+#write.table(tab, file = "./data/DESeq-results-DNS.txt", sep = "\t", row.names = FALSE)
+
+```
+
+There are 297 significant genuses (geni?) out of 593 total in the DNS swabs between farm A and B.
+
+### Rumen
+
+
+DESeq requires a separate matrix with metadata (categorical information) and it needs to be structured properly for the janky software to work properly.
+
+```{r metadata rumen}
+
+# get vector of sample names
+samp <- colnames(as.data.frame(rum)) 
+
+# turn this into a 1-column dataframe to add farm info
+df <- as.data.frame(samp)
+
+# add farm info that is stored in sample names
+meta <- df %>% 
+  # get string for farm
+  mutate(farm = str_extract(samp, "P(\\d)")) %>% 
+  # change to farm A and B
+  mutate(farm = factor(case_when(
+    farm %in% "P1" ~ "A",
+    farm %in% "P2" ~ "B"
+  ) )) %>% 
+  # make into rownames
+  column_to_rownames(var = "samp") 
+
+# DESeq requires the reference level to be set 
+meta$farm <- relevel(meta$farm, ref = "B")
+
+# and it needs to be in matrix format
+metam <- as.matrix(meta)
+
+```
+
+The DEseq protocol runs in the chunk below.
+
+```{r deseq rumen}
+
+# because DESeq2 is janky,  the names have to be in THE EXACT ORDER
+all(colnames(rum) == meta$sample)
+
+# make DESeq2 object
+dds <- DESeqDataSetFromMatrix(countData = rum,
+                              colData = metam,
+                              design = ~ farm)
+dds 
+
+# perform DeSeq testing
+de <- DESeq(dds, test = "Wald", fitType = "mean")  # fit type should be non-para
+
+# get results
+res = results(de, cooksCutoff = FALSE)
+# get only significant results
+sigtab = res[which(res$padj < alpha), ]
+
+# sort by log2fold change
+sigtab <- sigtab[order(sigtab$log2FoldChange), ]
+
+# make dataframe to save as text table
+tab <- as.data.frame(sigtab) %>% 
+  rownames_to_column(var = "Genus")
+
+# write results to file
+#write.table(tab, file = "./data/DESeq-results-rumen.txt", sep = "\t", row.names = FALSE)
+
+```
+There are 50 significant genuses out of 600 in the rumen samples.
+
+
+### Feces
+
+
+DESeq requires a separate matrix with metadata (categorical information) and it needs to be structured properly for the janky software to work properly.
+
+```{r metadata fecal}
+
+# get vector of sample names
+samp <- colnames(as.data.frame(fec)) 
+
+# turn this into a 1-column dataframe to add farm info
+df <- as.data.frame(samp)
+
+# add farm info that is stored in sample names
+meta <- df %>% 
+  # get string for farm
+  mutate(farm = str_extract(samp, "P(\\d)")) %>% 
+  # change to farm A and B
+  mutate(farm = factor(case_when(
+    farm %in% "P1" ~ "A",
+    farm %in% "P2" ~ "B"
+  ) )) %>% 
+  # make into rownames
+  column_to_rownames(var = "samp") 
+
+# DESeq requires the reference level to be set 
+meta$farm <- relevel(meta$farm, ref = "B")
+
+# and it needs to be in matrix format
+metam <- as.matrix(meta)
+
+```
+
+The DEseq protocol runs in the chunk below.
+
+```{r deseq fecal}
+
+# because DESeq2 is janky,  the names have to be in THE EXACT ORDER
+all(colnames(fec) == meta$sample)
+
+# make DESeq2 object
+dds <- DESeqDataSetFromMatrix(countData = fec,
+                              colData = metam,
+                              design = ~ farm)
+dds 
+
+# perform DeSeq testing
+de <- DESeq(dds, test = "Wald", fitType = "mean")  # fit type should be non-para
+
+# get results
+res = results(de, cooksCutoff = FALSE)
+# get only significant results
+sigtab = res[which(res$padj < alpha), ]
+
+# sort by log2fold change
+sigtab <- sigtab[order(sigtab$log2FoldChange), ]
+
+# make dataframe to save as text table
+tab <- as.data.frame(sigtab) %>% 
+  rownames_to_column(var = "Genus")
+
+# write results to file
+write.table(tab, file = "./data/DESeq-results-feces.txt", sep = "\t", row.names = FALSE)
+
+```
+There are 220 significant genuses out of 600 in the fecal samples.
