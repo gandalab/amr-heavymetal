@@ -302,7 +302,7 @@ de <- DESeq(dds, test = "Wald", fitType = "mean")  # fit type should be non-para
 
 ``` r
 # get results
-res = results(de, cooksCutoff = FALSE)
+res = results(de, cooksCutoff = FALSE, contrast = c("farm", "A", "B"))
 # get only significant results
 sigtab = res[which(res$padj < alpha), ]
 
@@ -408,7 +408,7 @@ de <- DESeq(dds, test = "Wald", fitType = "mean")  # fit type should be non-para
 
 ``` r
 # get results
-res = results(de, cooksCutoff = FALSE)
+res = results(de, cooksCutoff = FALSE, contrast = c("farm", "A", "B"))
 # get only significant results
 sigtab = res[which(res$padj < alpha), ]
 
@@ -513,7 +513,7 @@ de <- DESeq(dds, test = "Wald", fitType = "mean")  # fit type should be non-para
 
 ``` r
 # get results
-res = results(de, cooksCutoff = FALSE)
+res = results(de, cooksCutoff = FALSE, contrast = c("farm", "A", "B"))
 # get only significant results
 sigtab = res[which(res$padj < alpha), ]
 
@@ -525,7 +525,7 @@ tab <- as.data.frame(sigtab) %>%
   rownames_to_column(var = "Genus")
 
 # write results to file
-write.table(tab, file = "./data/DESeq-results-feces.txt", sep = "\t", row.names = FALSE)
+#write.table(tab, file = "./data/DESeq-results-feces.txt", sep = "\t", row.names = FALSE)
 ```
 
 There are 220 significant genuses out of 600 in the fecal samples.
