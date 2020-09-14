@@ -137,6 +137,13 @@ tab <- as.data.frame(sigtab) %>%
 # write results to file
 #write.table(tab, file = "./data/DESeq-results-DNS.txt", sep = "\t", row.names = FALSE)
 
+# get only top and bottom 25 to visualize
+
+top <- rbind(tab %>% slice_head(n = 25),
+             tab %>% slice_tail(n = 25))
+
+write.table(top, file = "./data/DESeq-results-DNS-top.txt", sep = "\t", row.names = FALSE)
+
 ```
 
 There are 297 significant genuses (geni?) out of 593 total in the DNS swabs between farm A and B.
@@ -205,6 +212,13 @@ tab <- as.data.frame(sigtab) %>%
 # write results to file
 #write.table(tab, file = "./data/DESeq-results-rumen.txt", sep = "\t", row.names = FALSE)
 
+# get only top and bottom 25 to visualize
+
+top <- rbind(tab %>% slice_head(n = 25),
+             tab %>% slice_tail(n = 25))
+
+#write.table(top, file = "./data/DESeq-results-rumen-top.txt", sep = "\t", row.names = FALSE)
+
 ```
 There are 50 significant genuses out of 600 in the rumen samples.
 
@@ -272,6 +286,13 @@ tab <- as.data.frame(sigtab) %>%
 
 # write results to file
 #write.table(tab, file = "./data/DESeq-results-feces.txt", sep = "\t", row.names = FALSE)
+
+# get only top and bottom 25 to visualize
+
+top <- rbind(tab %>% slice_head(n = 25),
+             tab %>% slice_tail(n = 25))
+
+#write.table(top, file = "./data/DESeq-results-feces-top.txt", sep = "\t", row.names = FALSE)
 
 ```
 There are 220 significant genuses out of 600 in the fecal samples.
