@@ -20,9 +20,21 @@ if(!require(UpSetR)) {
   require(UpSetR)
 }
 
+## UPDATE 9/15/2020 need to re-label the 4 swapped samples
+wonkies <- paste("G527_66_P2A10_rumen_S66", "G527_67_P2A14_rumen_S67",
+                 "G527_79_P2A10_SNP_S79", "G527_80_P2A14_SNP_S80", sep = "|")
+
 # read data - presence/absence
 dat <- read.table("https://github.com/EmilyB17/amr-brazil/blob/master/data/parsedPresenceAbsence.txt?raw=true",
-                  sep = "\t", header = TRUE)
+                  sep = "\t", header = TRUE) %>% 
+  ## UPDATE 9/15/2020 to swap mis-named samples
+  mutate(site.fix = case_when(
+    name %in% "G527_66_P2A10_rumen_S66" ~ "SNP",
+    name %in% "G527_67_P2A14_rumen_S67" ~ "SNP",
+    name %in% "G527_79_P2A10_SNP_S79" ~ "rumen",
+    name %in% "G527_80_P2A14_SNP_S80" ~ "rumen",
+    !str_detect(wonkies, name) ~ site
+  ))
 
 ## ---- Colors ----
 
@@ -127,13 +139,15 @@ upset(f2,
 
 # need: pattern as rowname, spread by sites
 
+## UPDATE 9/15/2020 need to re-label the 4 misnames samples
+## So anatomical sites may change 
 dat1 <- dat %>% 
   # make column for farm & site
   mutate(farm1 = case_when(
     farm %in% 1 ~ "A",
     farm %in% 2 ~ "B"
   )) %>% 
-  mutate(farmsite = paste0("farm", farm1, "-", site)) %>% 
+  mutate(farmsite = paste0("farm", farm1, "-", site.fix)) %>% 
   # summarize by farmsite
   group_by(farmsite, pattern) %>% 
   summarize(sumpres = sum(presence))  %>% 
@@ -160,5 +174,6 @@ upset(dat1, sets = c("farmA-SNP", "farmA-rumen", "farmA-feces",
       main.bar.color = accentcols[2],
       # set bar color
       sets.bar.color = "grey")
+
 
 
