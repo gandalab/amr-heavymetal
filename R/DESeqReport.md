@@ -174,7 +174,7 @@ alpha = 0.05
 # there are 3 text files, one for each anatomical site
 # for DEseq format, need genus on rows and samples in columns
 
-dns <- read.table("./data/OTU_genus_DNS_nominitable.txt", header = TRUE, sep = "\t") %>% 
+dns <- read.table("./data/OTU_genus_DNS.txt", header = TRUE, sep = "\t") %>% 
   # pivot long by genus
   pivot_longer(cols = 2:last_col(), names_to = "G", values_to = "count") %>%
   # spread back out by sample name
@@ -264,10 +264,10 @@ dds
 ```
 
     ## class: DESeqDataSet 
-    ## dim: 593 30 
+    ## dim: 594 30 
     ## metadata(1): version
     ## assays(1): counts
-    ## rownames(593): Abiotrophia Acaryochloris ...
+    ## rownames(594): Abiotrophia Acaryochloris ...
     ##   unclassified..derived.from.Vibrionaceae.
     ##   unclassified..derived.from.Vibrionales.
     ## rowData names(0):
@@ -292,7 +292,7 @@ de <- DESeq(dds, test = "Wald", fitType = "mean")  # fit type should be non-para
 
     ## fitting model and testing
 
-    ## -- replacing outliers and refitting for 101 genes
+    ## -- replacing outliers and refitting for 61 genes
     ## -- DESeq argument 'minReplicatesForReplace' = 7 
     ## -- original counts are preserved in counts(dds)
 
@@ -314,7 +314,14 @@ tab <- as.data.frame(sigtab) %>%
   rownames_to_column(var = "Genus")
 
 # write results to file
-#write.table(tab, file = "./data/DESeq-results-DNS.txt", sep = "\t", row.names = FALSE)
+write.table(tab, file = "./data/DESeq-results-DNS.txt", sep = "\t", row.names = FALSE)
+
+# get only top and bottom 25 to visualize
+
+top <- rbind(tab %>% slice_head(n = 25),
+             tab %>% slice_tail(n = 25))
+
+write.table(top, file = "./data/DESeq-results-DNS-top.txt", sep = "\t", row.names = FALSE)
 ```
 
 There are 297 significant genuses (geni?) out of 593 total in the DNS
@@ -398,7 +405,7 @@ de <- DESeq(dds, test = "Wald", fitType = "mean")  # fit type should be non-para
 
     ## fitting model and testing
 
-    ## -- replacing outliers and refitting for 115 genes
+    ## -- replacing outliers and refitting for 89 genes
     ## -- DESeq argument 'minReplicatesForReplace' = 7 
     ## -- original counts are preserved in counts(dds)
 
@@ -420,7 +427,14 @@ tab <- as.data.frame(sigtab) %>%
   rownames_to_column(var = "Genus")
 
 # write results to file
-#write.table(tab, file = "./data/DESeq-results-rumen.txt", sep = "\t", row.names = FALSE)
+write.table(tab, file = "./data/DESeq-results-rumen.txt", sep = "\t", row.names = FALSE)
+
+# get only top and bottom 25 to visualize
+
+top <- rbind(tab %>% slice_head(n = 25),
+             tab %>% slice_tail(n = 25))
+
+write.table(top, file = "./data/DESeq-results-rumen-top.txt", sep = "\t", row.names = FALSE)
 ```
 
 There are 50 significant genuses out of 600 in the rumen samples.
@@ -525,7 +539,14 @@ tab <- as.data.frame(sigtab) %>%
   rownames_to_column(var = "Genus")
 
 # write results to file
-#write.table(tab, file = "./data/DESeq-results-feces.txt", sep = "\t", row.names = FALSE)
+write.table(tab, file = "./data/DESeq-results-feces.txt", sep = "\t", row.names = FALSE)
+
+# get only top and bottom 25 to visualize
+
+top <- rbind(tab %>% slice_head(n = 25),
+             tab %>% slice_tail(n = 25))
+
+write.table(top, file = "./data/DESeq-results-feces-top.txt", sep = "\t", row.names = FALSE)
 ```
 
 There are 220 significant genuses out of 600 in the fecal samples.

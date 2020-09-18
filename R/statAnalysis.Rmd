@@ -7,8 +7,14 @@ output:
       toc: true
 ---
 
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, fig.align = "center")
+knitr::opts_knit$set(root.dir = "~/git/amr-heavymetal")
+
+```
+
+```{r}
 
 require(dplyr)
 require(tidyr)
@@ -17,7 +23,7 @@ require(ggplot2)
 require(ggpubr)
 
 # read in data
-counts <- read.table("~/git/amr-brazil/data/parsedRelativeAbundanceNoContams.txt", sep = "\t", header = TRUE)
+counts <- read.table("./data/parsedRelativeAbundanceNoContams.txt", sep = "\t", header = TRUE)
 
 # set ggplot2 theme
 theme_set(theme_bw())
@@ -28,6 +34,22 @@ types <- unique(counts$type)
 proteins <- unique(counts$protein)
 genes <- unique(counts$gene)
 patterns <- unique(counts$pattern)
+
+# there were four samples that got mis-labeled; this needs to be fixed
+### NOTE; this does not affect the FARM comparison b/c all were from farm2
+wonkies <- paste("G527_66_P2A10_rumen_S66", "G527_67_P2A14_rumen_S67",
+             "G527_79_P2A10_SNP_S79", "G527_80_P2A14_SNP_S80", sep = "|")
+
+counts.fix <- counts %>% 
+  # create new column of sites with the updated swaps
+  mutate(site.fix = case_when(
+    name %in% "G527_66_P2A10_rumen_S66" ~ "SNP",
+    name %in% "G527_67_P2A14_rumen_S67" ~ "SNP",
+    name %in% "G527_79_P2A10_SNP_S79" ~ "rumen",
+    name %in% "G527_80_P2A14_SNP_S80" ~ "rumen",
+    !str_detect(wonkies, name) ~ site
+  ),
+  farm = factor(farm))
 
 ```
 
@@ -489,8 +511,7 @@ Kruskal-Wallis test for non-parametric comparisons between the 3 body sites, str
 
 
 ## Stratify for each farm
-counts <- counts %>% mutate(farm = factor(farm))
-farms <- levels(counts$farm)
+farms <- levels(counts.fix$farm)
 # create empty dataframe to fill within the loop
 outsig <- data.frame()
 
@@ -500,7 +521,7 @@ for(j in 1:length(farms)) {
   for(i in 1:length(patterns)) {
     
     # perform Kruskal-Wallis test
-    k <- kruskal.test(relabun ~ site, data = filter(counts, pattern == patterns[i] &
+    k <- kruskal.test(relabun ~ site.fix, data = filter(counts.fix, pattern == patterns[i] &
                                                       farm == farms[j]))
     
    
@@ -535,13 +556,13 @@ adj <- outsig %>%
  
 # get genes that had a significant difference
 sigs <- adj %>% filter(sig == "TRUE") %>%  
-  left_join(counts, by = c("pattern", "farm")) %>% 
+  left_join(counts.fix, by = c("pattern", "farm")) %>% 
   # add presence/absence
   mutate(presence = case_when(
     relabun == 0 ~ 0,
     relabun != 0 ~ 1
   )) %>% 
-  group_by(site, farm, broadclass, type, protein, gene, pattern) %>% 
+  group_by(site.fix, farm, broadclass, type, protein, gene, pattern) %>% 
   summarize(median = median(relabun),
             IQR = IQR(relabun),
             prestotal = sum(presence)) %>% 
@@ -551,22 +572,22 @@ sigs <- adj %>% filter(sig == "TRUE") %>%
     farm == 2 ~ prestotal /43
   )) %>% 
   ungroup() %>% 
-  mutate(site = factor(site),
+  mutate(site.fix = factor(site.fix),
          farm = factor(farm))
 
 ## write summary statistics to table
 sum <- sigs %>% 
   left_join(adj, by = c("pattern", "farm")) %>% 
   select(-c(pval, sig)) %>% 
-  pivot_wider(names_from = site, values_from = c(median, IQR, prestotal, persamp.pres)) %>% 
+  pivot_wider(names_from = site.fix, values_from = c(median, IQR, prestotal, persamp.pres)) %>% 
   select(-pattern) %>% 
   arrange(farm)
   
-#write.table(sum, "/Users/epb5360/git/amr-brazil/data/results-tables/kruskal-genes.txt", sep = "\t", row.names = FALSE)
+#write.table(sum, "./data/kruskal-genes.txt", sep = "\t", row.names = FALSE)
 
 ```
 
-There are `r length(unique(sigs$pattern))` significant genes between body sites. The p values and summary statistics are not printed since there are so many.
+There are `r length(unique(sigs$pattern))` significant genes between body site.fixs. The p values and summary statistics are not printed since there are so many.
 
 Therefore, it may be more helpful to analyze this data in terms of the fewer genes that had higher prevalence in rumen or SNP, than fecal.
 
@@ -575,19 +596,28 @@ Therefore, it may be more helpful to analyze this data in terms of the fewer gen
 ## confirm if there are any standout genes that are higher in either rumen or SNP compared to fecal
 s <- sum %>% 
   select(-c(starts_with("median"), starts_with("IQR"), padj, starts_with("persamp"))) %>% 
-  # subtract gene presence of feces - rumen, SNP
-  mutate(diff.fecrum = prestotal_feces - prestotal_rumen,
-         diff.fecSNP = prestotal_feces - prestotal_SNP,
-         diff.rumSNP = prestotal_rumen - prestotal_SNP) %>% 
-  pivot_longer(cols = starts_with("diff."), names_to = "diff", values_to = "value")
+  # ssubtract fecal from SNP and rumen samples
+  # are fecal samples always higher in AMR prevalence?
+  mutate(diff.rumfec = prestotal_rumen - prestotal_feces,
+         diff.SNPfec = prestotal_SNP - prestotal_feces) 
 
-# get negative values
-negs <- filter(s, value < 0) %>% 
-  pivot_wider(names_from = diff, values_from = value)
+# get samples that are higher in DNS than feces
+hiDNS <- s %>% 
+  filter(diff.SNPfec > 0) # only 7
+# how many on each farm?
+length(which(hiDNS$farm == 1)) # 3
+length(which(hiDNS$farm == 2)) # 4
 
-# write to table
-write.table(negs, "./data/results-tables/site-genes-differences.txt", sep = "\t", row.names = FALSE)
+# get samples that are higher in rumen than feces
+hiRUM <- s %>% 
+  filter(diff.rumfec > 0) # only 88
+# how many on each farm?
+length(which(hiRUM$farm == 1)) # 72
+length(which(hiRUM$farm == 2)) # 16
 
+## total for each farm
+length(which(hiDNS$farm == 1))  + length(which(hiRUM$farm == 1)) # 75
+length(which(hiDNS$farm == 2)) + length(which(hiRUM$farm == 2)) # 20
 
 ```
 
@@ -599,13 +629,13 @@ This plot visualizes the differences; most are higher in feces, then rumen, then
 ```{r}
 
 # visualize the major trends
-ggplot(data = sigs, aes(x = site, y = median, group = pattern)) +
+ggplot(data = sigs, aes(x = site.fix, y = median, group = pattern)) +
   geom_point() +
   geom_jitter() +
   geom_line() +
   theme_bw() +
-  labs(x = "Body Site", y = "Median Relative Abundance") +
-  ggtitle("Significantly different genes by site & farm",
+  labs(x = "Body site.fix", y = "Median Relative Abundance") +
+  ggtitle("Significantly different genes by site.fix & farm",
           subtitle = paste0("n = (", length(which(adj$sig == TRUE)), ")")) +
   facet_wrap(~ farm)
 
@@ -617,8 +647,8 @@ ggplot(data = sigs, aes(x = site, y = median, group = pattern)) +
 ```{r}
 
 ## Stratify for each farm
-counts <- counts %>% mutate(farm = factor(farm))
-farms <- levels(counts$farm)
+counts.fix <- counts.fix %>% mutate(farm = factor(farm))
+farms <- levels(counts.fix$farm)
 # create empty dataframe to fill within the loop
 outsig <- data.frame()
 
@@ -628,7 +658,7 @@ for(j in 1:length(farms)) {
   for(i in 1:length(proteins)) {
     
     # perform Kruskal-Wallis test
-    k <- kruskal.test(relabun ~ site, data = filter(counts, protein == proteins[i] &
+    k <- kruskal.test(relabun ~ site.fix, data = filter(counts.fix, protein == proteins[i] &
                                                       farm == farms[j]))
     
    
@@ -664,13 +694,13 @@ adj <- outsig %>%
  
 # get genes that had a significant difference
 sigs <- adj %>% filter(sig == "TRUE") %>%  
-  left_join(counts, by = c("protein", "farm")) %>% 
+  left_join(counts.fix, by = c("protein", "farm")) %>% 
   # add presence/absence
   mutate(presence = case_when(
     relabun == 0 ~ 0,
     relabun != 0 ~ 1
   )) %>% 
-  group_by(site, farm, broadclass, type, protein) %>% 
+  group_by(site.fix, farm, broadclass, type, protein) %>% 
   summarize(median = median(relabun),
             IQR = IQR(relabun),
             prestotal = sum(presence)) %>% 
@@ -680,17 +710,17 @@ sigs <- adj %>% filter(sig == "TRUE") %>%
     farm == 2 ~ prestotal /43
   )) %>% 
   ungroup() %>% 
-  mutate(site = factor(site),
+  mutate(site.fix = factor(site.fix),
          farm = factor(farm))
 
 ## write summary statistics to table
 sum <- sigs %>% 
   left_join(adj, by = c("protein", "farm")) %>% 
   select(-c(pval, sig)) %>% 
-  pivot_wider(names_from = site, values_from = c(median, IQR, prestotal, persamp.pres)) %>% 
+  pivot_wider(names_from = site.fix, values_from = c(median, IQR, prestotal, persamp.pres)) %>% 
   arrange(farm)
  
-#write.table(sum, "/Users/epb5360/git/amr-brazil/data/results-tables/kruskal-proteins.txt", sep = "\t", row.names = FALSE)
+#write.table(sum, "./data/kruskal-proteins.txt", sep = "\t", row.names = FALSE)
 
 
 ```
@@ -702,13 +732,13 @@ There are `r length(unique(sigs$protein))` significant proteins in the dataset.
 ```{r}
 
 # visualize the major trends
-ggplot(data = sigs, aes(x = site, y = median, group = protein)) +
+ggplot(data = sigs, aes(x = site.fix, y = median, group = protein)) +
   geom_point() +
   geom_jitter() +
   geom_line() +
   theme_bw() +
-  labs(x = "Body Site", y = "Median Relative Abundance") +
-  ggtitle("Significantly different proteins by site & farm",
+  labs(x = "Body site.fix", y = "Median Relative Abundance") +
+  ggtitle("Significantly different proteins by site.fix & farm",
           subtitle = paste0("n = (", length(which(adj$sig == TRUE)), ")")) +
   facet_wrap(~ farm)
 
@@ -721,8 +751,8 @@ ggplot(data = sigs, aes(x = site, y = median, group = protein)) +
 
 
 ## Stratify for each farm
-counts <- counts %>% mutate(farm = factor(farm))
-farms <- levels(counts$farm)
+counts.fix <- counts.fix %>% mutate(farm = factor(farm))
+farms <- levels(counts.fix$farm)
 # create empty dataframe to fill within the loop
 outsig <- data.frame()
 
@@ -732,7 +762,7 @@ for(j in 1:length(farms)) {
   for(i in 1:length(types)) {
     
     # perform Kruskal-Wallis test
-    k <- kruskal.test(relabun ~ site, data = filter(counts, type == types[i] &
+    k <- kruskal.test(relabun ~ site.fix, data = filter(counts.fix, type == types[i] &
                                                       farm == farms[j]))
     
    
@@ -767,13 +797,13 @@ adj <- outsig %>%
  
 # get genes that had a significant difference
 sigs <- adj %>% filter(sig == "TRUE") %>%  
-  left_join(counts, by = c("type", "farm")) %>% 
+  left_join(counts.fix, by = c("type", "farm")) %>% 
   # add presence/absence
   mutate(presence = case_when(
     relabun == 0 ~ 0,
     relabun != 0 ~ 1
   )) %>% 
-  group_by(site, farm, broadclass, type) %>% 
+  group_by(site.fix, farm, broadclass, type) %>% 
   summarize(median = median(relabun),
             IQR = IQR(relabun),
             prestotal = sum(presence)) %>% 
@@ -783,17 +813,17 @@ sigs <- adj %>% filter(sig == "TRUE") %>%
     farm == 2 ~ prestotal /43
   )) %>% 
   ungroup() %>% 
-  mutate(site = factor(site),
+  mutate(site.fix = factor(site.fix),
          farm = factor(farm))
 
 ## write summary statistics to table
 sum <- sigs %>% 
   left_join(adj, by = c("type", "farm")) %>% 
   select(-c(pval, sig)) %>% 
-  pivot_wider(names_from = site, values_from = c(median, IQR, prestotal, persamp.pres)) %>% 
+  pivot_wider(names_from = site.fix, values_from = c(median, IQR, prestotal, persamp.pres)) %>% 
   arrange(farm)
  
-#write.table(sum, "/Users/epb5360/git/amr-brazil/data/results-tables/kruskal-types.txt", sep = "\t", row.names = FALSE)
+#write.table(sum, "./data/kruskal-types.txt", sep = "\t", row.names = FALSE)
 
 ```
 
@@ -806,13 +836,13 @@ There are `r length(unique(sigs$type))` significant proteins in the dataset.
 ```{r}
 
 # visualize the major trends
-ggplot(data = sigs, aes(x = site, y = median, group = type)) +
+ggplot(data = sigs, aes(x = site.fix, y = median, group = type)) +
   geom_point() +
   geom_jitter() +
   geom_line() +
   theme_bw() +
-  labs(x = "Body Site", y = "Median Relative Abundance") +
-  ggtitle("Significantly different types by site & farm",
+  labs(x = "Body site.fix", y = "Median Relative Abundance") +
+  ggtitle("Significantly different types by site.fix & farm",
           subtitle = paste0("n = (", length(which(adj$sig == TRUE)), ")")) +
   facet_wrap(~ farm)
 
@@ -825,8 +855,8 @@ ggplot(data = sigs, aes(x = site, y = median, group = type)) +
 
 
 ## Stratify for each farm
-counts <- counts %>% mutate(farm = factor(farm))
-farms <- levels(counts$farm)
+counts.fix <- counts.fix %>% mutate(farm = factor(farm))
+farms <- levels(counts.fix$farm)
 # create empty dataframe to fill within the loop
 outsig <- data.frame()
 
@@ -836,7 +866,7 @@ for(j in 1:length(farms)) {
   for(i in 1:length(classes)) {
     
     # perform Kruskal-Wallis test
-    k <- kruskal.test(relabun ~ site, data = filter(counts, broadclass == classes[i] &
+    k <- kruskal.test(relabun ~ site.fix, data = filter(counts.fix, broadclass == classes[i] &
                                                       farm == farms[j]))
     
    
@@ -871,13 +901,13 @@ adj <- outsig %>%
  
 # get genes that had a significant difference
 sigs <- adj %>% filter(sig == "TRUE") %>%  
-  left_join(counts, by = c("class" = "broadclass", "farm")) %>% 
+  left_join(counts.fix, by = c("class" = "broadclass", "farm")) %>% 
   # add presence/absence
   mutate(presence = case_when(
     relabun == 0 ~ 0,
     relabun != 0 ~ 1
   )) %>% 
-  group_by(site, farm, class) %>% 
+  group_by(site.fix, farm, class) %>% 
   summarize(median = median(relabun),
             IQR = IQR(relabun),
             prestotal = sum(presence)) %>% 
@@ -887,16 +917,16 @@ sigs <- adj %>% filter(sig == "TRUE") %>%
     farm == 2 ~ prestotal /43
   )) %>% 
   ungroup() %>% 
-  mutate(site = factor(site),
+  mutate(site.fix = factor(site.fix),
          farm = factor(farm))
 
 ## write summary statistics to table
 sum <- sigs %>% 
   left_join(adj, by = c("class", "farm")) %>% 
   select(-c(pval, sig)) %>% 
-  pivot_wider(names_from = site, values_from = c(median, IQR, prestotal, persamp.pres)) %>% 
+  pivot_wider(names_from = site.fix, values_from = c(median, IQR, prestotal, persamp.pres)) %>% 
   arrange(farm)
-#write.table(sum, "/Users/epb5360/git/amr-brazil/data/results-tables/kruskal-class.txt", sep = "\t", row.names = FALSE)
+#write.table(sum, "./data/kruskal-class.txt", sep = "\t", row.names = FALSE)
 
 
 ```
@@ -909,13 +939,13 @@ There are `r length(unique(sigs$class))` significant classes in the dataset.
 ```{r}
 
 # visualize the major trends
-ggplot(data = sigs, aes(x = site, y = median, group = class)) +
+ggplot(data = sigs, aes(x = site.fix, y = median, group = class)) +
   geom_point() +
   geom_jitter() +
   geom_line() +
   theme_bw() +
-  labs(x = "Body Site", y = "Median Relative Abundance") +
-  ggtitle("Significantly different classes by site & farm",
+  labs(x = "Body site.fix", y = "Median Relative Abundance") +
+  ggtitle("Significantly different classes by site.fix & farm",
           subtitle = paste0("n = (", length(which(adj$sig == TRUE)), ")")) +
   facet_wrap(~ farm)
 

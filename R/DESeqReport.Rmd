@@ -31,7 +31,7 @@ alpha = 0.05
 # there are 3 text files, one for each anatomical site
 # for DEseq format, need genus on rows and samples in columns
 
-dns <- read.table("./data/OTU_genus_DNS_nominitable.txt", header = TRUE, sep = "\t") %>% 
+dns <- read.table("./data/OTU_genus_DNS.txt", header = TRUE, sep = "\t") %>% 
   # pivot long by genus
   pivot_longer(cols = 2:last_col(), names_to = "G", values_to = "count") %>%
   # spread back out by sample name
@@ -142,7 +142,7 @@ tab <- as.data.frame(sigtab) %>%
 top <- rbind(tab %>% slice_head(n = 25),
              tab %>% slice_tail(n = 25))
 
-write.table(top, file = "./data/DESeq-results-DNS-top.txt", sep = "\t", row.names = FALSE)
+#write.table(top, file = "./data/DESeq-results-DNS-top.txt", sep = "\t", row.names = FALSE)
 
 ```
 
