@@ -1,67 +1,58 @@
-# Working script; DeSeq2 on OTU at genus level
+# remove samples 66 and 67 from rumen
+
+df <- as.data.frame(rum)
+
+grep("G527_66", colnames(rum))
+grep("G527_67", colnames(rum))
+
+new <- df %>% 
+  dplyr::select(-starts_with("G527_66")) %>% 
+  select(-starts_with("G527_67"))
 
 
-## get data
-require(tidyverse)
-require(DESeq2)
-require(phyloseq)
-set.seed(123)
 
-# there are 3 text files for each anatomial site
-dns <- read.table("./data/OTU_genus_DNS_nominitable.txt", header = TRUE, sep = "\t") %>% 
-  pivot_longer(cols = 2:last_col(), names_to = "G", values_to = "count")
+# get vector of sample names
+samp <- colnames(as.data.frame(new)) 
 
-fec <- read.table("./data/OTU_genus_feces.txt", header = TRUE, sep = "\t") %>% 
-  pivot_longer(cols = 2:last_col(), names_to = "G", values_to = "count")
+# turn this into a 1-column dataframe to add farm info
+df <- as.data.frame(samp)
 
-rum <- read.table("./data/OTU_genus_rumen.txt", header = TRUE, sep = "\t") %>% 
-  pivot_longer(cols = 2:last_col(), names_to = "G", values_to = "count")
-
-both <- rbind(fec, dns, rum) %>% 
-  pivot_wider(names_from = G, values_from = count, values_fill = 0) 
-
-# need genus on rows and samples in columns
-df <- dns %>% 
-  pivot_longer(cols = 2:last_col(), names_to = "G", values_to = "count") %>% 
-  pivot_wider(names_from = genus, values_from = count, values_fill = 0) %>% 
-  drop_na() %>% 
-  column_to_rownames(var = "G")
-
-dfm <- as.matrix(df)
-
-# need metadata matrix with farm info
-meta <- both %>% 
-  select(genus) %>% 
-  rename(genus = "sample") %>% 
-  mutate(farm = str_extract(sample, "P(\\d)")) %>% 
+# add farm info that is stored in sample names
+meta <- df %>% 
+  # get string for farm
+  mutate(farm = str_extract(samp, "P(\\d)")) %>% 
+  # change to farm A and B
   mutate(farm = factor(case_when(
     farm %in% "P1" ~ "A",
     farm %in% "P2" ~ "B"
   ) )) %>% 
-  column_to_rownames(var = "sample") 
+  # make into rownames
+  column_to_rownames(var = "samp") 
+
+# DESeq requires the reference level to be set 
 meta$farm <- relevel(meta$farm, ref = "B")
 
+# and it needs to be in matrix format
 metam <- as.matrix(meta)
 
 
 
-# because DESeq2 was written by morons, the names have to be in THE EXACT ORDER
-all(colnames(df)[2:ncol(df)] == meta$sample)
+# because DESeq2 is janky,  the names have to be in THE EXACT ORDER
+all(colnames(new) == meta$sample)
 
 # make DESeq2 object
-dds <- DESeqDataSetFromMatrix(countData = dfm,
+dds <- DESeqDataSetFromMatrix(countData = new,
                               colData = metam,
                               design = ~ farm)
-dds
+dds 
 
 # perform DeSeq testing
 de <- DESeq(dds, test = "Wald", fitType = "mean")  # fit type should be non-para
 
 # get results
-res = results(de, cooksCutoff = FALSE)
-alpha = 0.05
+res = results(de, cooksCutoff = FALSE, contrast = c("farm", "A", "B"))
+# get only significant results
 sigtab = res[which(res$padj < alpha), ]
-head(sigtab)
 
 # sort by log2fold change
 sigtab <- sigtab[order(sigtab$log2FoldChange), ]
@@ -69,6 +60,3 @@ sigtab <- sigtab[order(sigtab$log2FoldChange), ]
 # make dataframe to save as text table
 tab <- as.data.frame(sigtab) %>% 
   rownames_to_column(var = "Genus")
-
-# write results to file
-write.table(tab, file = "./data/DESeq-results-genus.txt", sep = "\t", row.names = FALSE)
